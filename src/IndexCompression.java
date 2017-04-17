@@ -26,9 +26,16 @@ public class IndexCompression {
    *                              The output gaps are placed back into this array!
    */
   public static void gapEncode(int[] inputDocIdsOutputGaps) {
-    // TODO: Fill in your code here
-  }
 
+    // TODO: Fill in your code here
+
+    int tracker = inputDocIdsOutputGaps[0];
+    for (int i=1; i<inputDocIdsOutputGaps.length; ++i) {
+      inputDocIdsOutputGaps[i] = inputDocIdsOutputGaps[i] - tracker;
+      tracker += inputDocIdsOutputGaps[i];
+    }
+
+  }
 
   /**
    * Decodes a gap encoded postings list into the corresponding docIds.  The input
@@ -44,8 +51,18 @@ public class IndexCompression {
    */
   public static void gapDecode(int[] inputGapsOutputDocIds) {
     // TODO: Fill in your code here
+    for (int i=1; i<inputGapsOutputDocIds.length; ++i) {
+      inputGapsOutputDocIds[i] = inputGapsOutputDocIds[i] + inputGapsOutputDocIds[i-1];
+    }
   }
 
+  private static void prependToArray(byte[] a, byte b) {
+    // TODO: handle edge cases
+    for (int i=a.length-2; i>=0; --i) {
+      a[i+1] = a[i];
+    }
+    a[0] = b;
+  }
 
   /**
    * Encodes gap using a VB code.  The encoded bytes are placed in outputVBCode.
@@ -58,8 +75,32 @@ public class IndexCompression {
    */
   public static int VBEncodeInteger(int gap, byte[] outputVBCode) {
     int numBytes = 0;
+
     // TODO: Fill in your code here
+
+    while (true) {
+      if (gap < 128) {
+        byte b = (byte) (gap); // set continuation bit
+        if (numBytes==0) {
+          b = (byte) (gap | 0b10000000);
+        }
+        prependToArray(outputVBCode, b);
+        numBytes++;
+        break;
+      }
+
+      byte low7bits = (byte) (gap & 0b01111111); // get low 7 bits
+      if (numBytes==0) {
+        low7bits = (byte) (low7bits | 0b10000000); // set continuation bit
+      }
+
+      prependToArray(outputVBCode, low7bits);
+      numBytes++;
+      gap = gap >> 7;
+    }
+
     return numBytes;
+
   }
 
 
@@ -77,6 +118,33 @@ public class IndexCompression {
    */
   public static void VBDecodeInteger(byte[] inputVBCode, int startIndex, int[] numberEndIndex) {
     // TODO: Fill in your code here
+
+    int result = 0;
+    int i = inputVBCode.length - 1;
+    int counter = 0;
+    for (; i>=0; i--) {
+      if (inputVBCode[i] == 0) {
+        continue;
+      }
+
+      // TODO: do some validations ... msb must be one for the first byte read, and 0 for the remaining bytes ...
+      byte temp = inputVBCode[i];
+      if ( ( counter==0 && (((temp>>7)&1) != 1)) || ( counter !=0 && (((temp>>7)&1) == 1)) ) {
+        // a vb code is invalid if the continuation bit isn't set for the first byte
+        // or if it was set for one of subsequent bytes
+        throw new IllegalArgumentException("Oups ... an invalid was detected !");
+      }
+      temp = (byte) (temp & 0b01111111); // unset the high bit
+      result = (temp << (7 * counter)) | result;
+      counter++;
+
+    }
+
+    numberEndIndex[0] = result;
+    numberEndIndex[1] = counter;
+
+
+
   }
 
 
@@ -299,7 +367,7 @@ public class IndexCompression {
     testVBDecodeInteger(true);
     testUnaryEncodeInteger(false);
     testUnaryDecodeInteger(false);
-    testGammaEncodeInteger(true);
+    testGammaEncodeInteger(false);
     testGammaDecodeInteger(false);
   }
 
@@ -335,6 +403,7 @@ public class IndexCompression {
 
 
   public static boolean testVBEncodeInteger(boolean debugPrint) {
+
     boolean success = true;
     byte[] outputVBCode = new byte[Integer.SIZE / 7 + 1];  // Enough to encode an integer in VBCode
 
@@ -421,7 +490,7 @@ public class IndexCompression {
         System.out.println("Expected: IllegalArgumentException");
         System.out.println("Test failed: " + "VBDecodeInteger");
       }
-    } catch (IllegalArgumentException iae) {
+    } catch (IllegalArgumentException ignore) {
       // that's correct
     }
 
@@ -858,3 +927,4 @@ public class IndexCompression {
   }
 
 }
+
